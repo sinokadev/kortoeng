@@ -1,0 +1,1108 @@
+= 한/영타 변환기 =
+생각하고 쓴 날짜 : 2004/01/21[[BR]]
+----
+
+제목이 나타내듯 바로 '한/영타 변환기' 입니다.[[BR]]
+가끔씩 볼 수 있는 'dodls rngka;' 같은 한글을 영어로 친 것이나, '소둇.ㅜㄷㅅ' 같은 영어를 한글로 친 것을 쉽게 원래의 글로 바꿔 줍니다.[[BR]]
+또한 그 반대 방향으로의 변환도 가능합니다.
+
+이 변환기는 한국어 두벌식 자판 ↔ 영문 Qwerty 자판 사이의 변환을 수행합니다.
+
+사용 : 한글로 친 것을 영어로 바꿀 것인지, 영어로 친 것을 한글로 바꿀 것인지 선택합니다. 글을 입력하면 바로 변환됩니다.
+
+ * (12/09/19) 여러 브라우저에서 사용할 수 있도록 JavaScript로 변환하였습니다.
+ * (21/02/19) 입력란 비우기, 결과 복사 버튼을 추가했습니다.
+
+{{{#!html
+<style>
+#convform th { white-space: nowrap; }
+#convform td { padding-right: 0.8em; }
+#convform textarea { width: 100%; }
+#convform span { padding: 1em; }
+</style>
+}}}
+{{{#!table id="convform"
+||= 문장 입력:=||[[html(<textarea id="txtSource" rows="4" cols="60" onKeyUp="doConvert();"></textarea>)]]||  [[html(<button onClick="clearText();">비우기</button>)]]  ||
+||||||  [[html(<input type="radio" id="optEtoH" name="Mode" checked="checked" onClick="doConvert();"><label for="optEtoH">영타 → 한글</label>)]][[span( )]][[html(<input type="radio" id="optHtoE" name="Mode" onClick="doConvert();"><label for="optHtoE">한타 → 영문</label>)]]  ||
+||= 변환 결과:=||[[html(<textarea id="txtConv" rows="4" cols="60" readonly="readonly"></textarea>)]]||  [[html(<button onClick="copyResult();">복사</button>)]]  ||
+}}}
+{{{#!html
+<script language="JavaScript">
+<!--
+var ENG_KEY = "rRseEfaqQtTdwWczxvgkoiOjpuPhynbml";
+var KOR_KEY = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎㅏㅐㅑㅒㅓㅔㅕㅖㅗㅛㅜㅠㅡㅣ";
+var CHO_DATA = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+var JUNG_DATA = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ";
+var JONG_DATA = "ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ";
+
+function doConvert() {
+	const srcElem = document.getElementById("txtSource");
+	const destElem = document.getElementById("txtConv");
+
+	if (optEtoH.checked) {
+		destElem.value = engTypeToKor(srcElem.value);
+	} else {
+		destElem.value = korTypeToEng(srcElem.value);
+	}
+}
+
+function engTypeToKor(src) {
+	var res = "";
+	if (src.length == 0)
+		return res;
+
+	var nCho = -1, nJung = -1, nJong = -1;		// 초성, 중성, 종성
+
+	for (var i = 0; i < src.length; i++) {
+		var ch = src.charAt(i);
+		var p = ENG_KEY.indexOf(ch);
+		if (p == -1) {				// 영자판이 아님
+			// 남아있는 한글이 있으면 처리
+			if (nCho != -1) {
+				if (nJung != -1)				// 초성+중성+(종성)
+					res += makeHangul(nCho, nJung, nJong);
+				else							// 초성만
+					res += CHO_DATA.charAt(nCho);
+			} else {
+				if (nJung != -1)				// 중성만
+					res += JUNG_DATA.charAt(nJung);
+				else if (nJong != -1)			// 복자음
+					res += JONG_DATA.charAt(nJong);
+			}
+			nCho = -1;
+			nJung = -1;
+			nJong = -1;
+			res += ch;
+		} else if (p < 19) {			// 자음
+			if (nJung != -1) {
+				if (nCho == -1) {					// 중성만 입력됨, 초성으로
+					res += JUNG_DATA.charAt(nJung);
+					nJung = -1;
+					nCho = CHO_DATA.indexOf(KOR_KEY.charAt(p));
+				} else {							// 종성이다
+					if (nJong == -1) {				// 종성 입력 중
+						nJong = JONG_DATA.indexOf(KOR_KEY.charAt(p));
+						if (nJong == -1) {			// 종성이 아니라 초성이다
+							res += makeHangul(nCho, nJung, nJong);
+							nCho = CHO_DATA.indexOf(KOR_KEY.charAt(p));
+							nJung = -1;
+						}
+					} else if (nJong == 0 && p == 9) {			// ㄳ
+						nJong = 2;
+					} else if (nJong == 3 && p == 12) {			// ㄵ
+						nJong = 4;
+					} else if (nJong == 3 && p == 18) {			// ㄶ
+						nJong = 5;
+					} else if (nJong == 7 && p == 0) {			// ㄺ
+						nJong = 8;
+					} else if (nJong == 7 && p == 6) {			// ㄻ
+						nJong = 9;
+					} else if (nJong == 7 && p == 7) {			// ㄼ
+						nJong = 10;
+					} else if (nJong == 7 && p == 9) {			// ㄽ
+						nJong = 11;
+					} else if (nJong == 7 && p == 16) {			// ㄾ
+						nJong = 12;
+					} else if (nJong == 7 && p == 17) {			// ㄿ
+						nJong = 13;
+					} else if (nJong == 7 && p == 18) {			// ㅀ
+						nJong = 14;
+					} else if (nJong == 16 && p == 9) {			// ㅄ
+						nJong = 17;
+					} else {						// 종성 입력 끝, 초성으로
+						res += makeHangul(nCho, nJung, nJong);
+						nCho = CHO_DATA.indexOf(KOR_KEY.charAt(p));
+						nJung = -1;
+						nJong = -1;
+					}
+				}
+			} else {								// 초성 또는 (단/복)자음이다
+				if (nCho == -1) {					// 초성 입력 시작
+					if (nJong != -1) {				// 복자음 후 초성
+						res += JONG_DATA.charAt(nJong);
+						nJong = -1;
+					}
+					nCho = CHO_DATA.indexOf(KOR_KEY.charAt(p));
+				} else if (nCho == 0 && p == 9) {			// ㄳ
+					nCho = -1;
+					nJong = 2;
+				} else if (nCho == 2 && p == 12) {			// ㄵ
+					nCho = -1;
+					nJong = 4;
+				} else if (nCho == 2 && p == 18) {			// ㄶ
+					nCho = -1;
+					nJong = 5;
+				} else if (nCho == 5 && p == 0) {			// ㄺ
+					nCho = -1;
+					nJong = 8;
+				} else if (nCho == 5 && p == 6) {			// ㄻ
+					nCho = -1;
+					nJong = 9;
+				} else if (nCho == 5 && p == 7) {			// ㄼ
+					nCho = -1;
+					nJong = 10;
+				} else if (nCho == 5 && p == 9) {			// ㄽ
+					nCho = -1;
+					nJong = 11;
+				} else if (nCho == 5 && p == 16) {			// ㄾ
+					nCho = -1;
+					nJong = 12;
+				} else if (nCho == 5 && p == 17) {			// ㄿ
+					nCho = -1;
+					nJong = 13;
+				} else if (nCho == 5 && p == 18) {			// ㅀ
+					nCho = -1;
+					nJong = 14;
+				} else if (nCho == 7 && p == 9) {			// ㅄ
+					nCho = -1;
+					nJong = 17;
+				} else {							// 단자음을 연타
+					res += CHO_DATA.charAt(nCho);
+					nCho = CHO_DATA.indexOf(KOR_KEY.charAt(p));
+				}
+			}
+		} else {									// 모음
+			if (nJong != -1) {						// (앞글자 종성), 초성+중성
+				// 복자음 다시 분해
+				var newCho;			// (임시용) 초성
+				if (nJong == 2) {					// ㄱ, ㅅ
+					nJong = 0;
+					newCho = 9;
+				} else if (nJong == 4) {			// ㄴ, ㅈ
+					nJong = 3;
+					newCho = 12;
+				} else if (nJong == 5) {			// ㄴ, ㅎ
+					nJong = 3;
+					newCho = 18;
+				} else if (nJong == 8) {			// ㄹ, ㄱ
+					nJong = 7;
+					newCho = 0;
+				} else if (nJong == 9) {			// ㄹ, ㅁ
+					nJong = 7;
+					newCho = 6;
+				} else if (nJong == 10) {			// ㄹ, ㅂ
+					nJong = 7;
+					newCho = 7;
+				} else if (nJong == 11) {			// ㄹ, ㅅ
+					nJong = 7;
+					newCho = 9;
+				} else if (nJong == 12) {			// ㄹ, ㅌ
+					nJong = 7;
+					newCho = 16;
+				} else if (nJong == 13) {			// ㄹ, ㅍ
+					nJong = 7;
+					newCho = 17;
+				} else if (nJong == 14) {			// ㄹ, ㅎ
+					nJong = 7;
+					newCho = 18;
+				} else if (nJong == 17) {			// ㅂ, ㅅ
+					nJong = 16;
+					newCho = 9;
+				} else {							// 복자음 아님
+					newCho = CHO_DATA.indexOf(JONG_DATA.charAt(nJong));
+					nJong = -1;
+				}
+				if (nCho != -1)			// 앞글자가 초성+중성+(종성)
+					res += makeHangul(nCho, nJung, nJong);
+				else                    // 복자음만 있음
+					res += JONG_DATA.charAt(nJong);
+
+				nCho = newCho;
+				nJung = -1;
+				nJong = -1;
+			}
+			if (nJung == -1) {						// 중성 입력 중
+				nJung = JUNG_DATA.indexOf(KOR_KEY.charAt(p));
+			} else if (nJung == 8 && p == 19) {            // ㅘ
+				nJung = 9;
+			} else if (nJung == 8 && p == 20) {            // ㅙ
+				nJung = 10;
+			} else if (nJung == 8 && p == 32) {            // ㅚ
+				nJung = 11;
+			} else if (nJung == 13 && p == 23) {           // ㅝ
+				nJung = 14;
+			} else if (nJung == 13 && p == 24) {           // ㅞ
+				nJung = 15;
+			} else if (nJung == 13 && p == 32) {           // ㅟ
+				nJung = 16;
+			} else if (nJung == 18 && p == 32) {           // ㅢ
+				nJung = 19;
+			} else {			// 조합 안되는 모음 입력
+				if (nCho != -1) {			// 초성+중성 후 중성
+					res += makeHangul(nCho, nJung, nJong);
+					nCho = -1;
+				} else						// 중성 후 중성
+					res += JUNG_DATA.charAt(nJung);
+				nJung = -1;
+				res += KOR_KEY.charAt(p);
+			}
+		}
+	}
+
+	// 마지막 한글이 있으면 처리
+	if (nCho != -1) {
+		if (nJung != -1)			// 초성+중성+(종성)
+			res += makeHangul(nCho, nJung, nJong);
+		else                		// 초성만
+			res += CHO_DATA.charAt(nCho);
+	} else {
+		if (nJung != -1)			// 중성만
+			res += JUNG_DATA.charAt(nJung);
+		else {						// 복자음
+			if (nJong != -1)
+				res += JONG_DATA.charAt(nJong);
+		}
+	}
+
+	return res;
+}
+
+function makeHangul(nCho, nJung, nJong) {
+	return String.fromCharCode(0xac00 + nCho * 21 * 28 + nJung * 28 + nJong + 1);
+}
+
+function korTypeToEng(src) {
+	var res = "";
+	if (src.length == 0)
+		return res;
+
+	for (var i = 0; i < src.length; i++) {
+		var ch = src.charAt(i);
+		var nCode = ch.charCodeAt(0);
+		var nCho = CHO_DATA.indexOf(ch), nJung = JUNG_DATA.indexOf(ch), nJong = JONG_DATA.indexOf(ch);
+		var arrKeyIndex = [-1, -1, -1, -1, -1];
+
+		if (0xac00 <= nCode && nCode <= 0xd7a3) {
+			nCode -= 0xac00;
+			arrKeyIndex[0] = Math.floor(nCode / (21 * 28));			// 초성
+			arrKeyIndex[1] = Math.floor(nCode / 28) % 21;			// 중성
+			arrKeyIndex[3] = nCode % 28 - 1;						// 종성
+		} else if (nCho != -1)			// 초성 자음
+			arrKeyIndex[0] = nCho;
+		else if (nJung != -1)			// 중성
+			arrKeyIndex[1] = nJung;
+		else if (nJong != -1)			// 종성 자음
+			arrKeyIndex[3] = nJong;
+		else							// 한글이 아님
+			res += ch;
+
+		// 실제 Key Index로 변경. 초성은 순서 동일
+		if (arrKeyIndex[1] != -1) {
+			if (arrKeyIndex[1] == 9) {					// ㅘ
+				arrKeyIndex[1] = 27;
+				arrKeyIndex[2] = 19;
+			} else if (arrKeyIndex[1] == 10) {			// ㅙ
+				arrKeyIndex[1] = 27;
+				arrKeyIndex[2] = 20;
+			} else if (arrKeyIndex[1] == 11) {			// ㅚ
+				arrKeyIndex[1] = 27;
+				arrKeyIndex[2] = 32;
+			} else if (arrKeyIndex[1] == 14) {			// ㅝ
+				arrKeyIndex[1] = 29;
+				arrKeyIndex[2] = 23;
+			} else if (arrKeyIndex[1] == 15) {			// ㅞ
+				arrKeyIndex[1] = 29;
+				arrKeyIndex[2] = 24;
+			} else if (arrKeyIndex[1] == 16) {			// ㅟ
+				arrKeyIndex[1] = 29;
+				arrKeyIndex[2] = 32;
+			} else if (arrKeyIndex[1] == 19) {			// ㅢ
+				arrKeyIndex[1] = 31;
+				arrKeyIndex[2] = 32;
+			} else {
+				arrKeyIndex[1] = KOR_KEY.indexOf(JUNG_DATA.charAt(arrKeyIndex[1]));
+				arrKeyIndex[2] = -1;
+			}
+		}
+		if (arrKeyIndex[3] != -1) {
+			if (arrKeyIndex[3] == 2) {					// ㄳ
+				arrKeyIndex[3] = 0
+				arrKeyIndex[4] = 9;
+			} else if (arrKeyIndex[3] == 4) {			// ㄵ
+				arrKeyIndex[3] = 2;
+				arrKeyIndex[4] = 12;
+			} else if (arrKeyIndex[3] == 5) {			// ㄶ
+				arrKeyIndex[3] = 2;
+				arrKeyIndex[4] = 18;
+			} else if (arrKeyIndex[3] == 8) {			// ㄺ
+				arrKeyIndex[3] = 5;
+				arrKeyIndex[4] = 0;
+			} else if (arrKeyIndex[3] == 9) {			// ㄻ
+				arrKeyIndex[3] = 5;
+				arrKeyIndex[4] = 6;
+			} else if (arrKeyIndex[3] == 10) {			// ㄼ
+				arrKeyIndex[3] = 5;
+				arrKeyIndex[4] = 7;
+			} else if (arrKeyIndex[3] == 11) {			// ㄽ
+				arrKeyIndex[3] = 5;
+				arrKeyIndex[4] = 9;
+			} else if (arrKeyIndex[3] == 12) {			// ㄾ
+				arrKeyIndex[3] = 5;
+				arrKeyIndex[4] = 16;
+			} else if (arrKeyIndex[3] == 13) {			// ㄿ
+				arrKeyIndex[3] = 5;
+				arrKeyIndex[4] = 17;
+			} else if (arrKeyIndex[3] == 14) {			// ㅀ
+				arrKeyIndex[3] = 5;
+				arrKeyIndex[4] = 18;
+			} else if (arrKeyIndex[3] == 17) {			// ㅄ
+				arrKeyIndex[3] = 7;
+				arrKeyIndex[4] = 9;
+			} else {
+				arrKeyIndex[3] = KOR_KEY.indexOf(JONG_DATA.charAt(arrKeyIndex[3]));
+				arrKeyIndex[4] = -1;
+			}
+		}
+
+		for (var j = 0; j < 5; j++) {
+			if (arrKeyIndex[j] != -1)
+				res += ENG_KEY.charAt(arrKeyIndex[j]);
+		}
+	}
+
+	return res;
+}
+
+function clearText() {
+	const srcElem = document.getElementById("txtSource");
+	const destElem = document.getElementById("txtConv");
+
+	srcElem.value = "";
+	destElem.value = "";
+}
+
+function copyResult() {
+	const destElem = document.getElementById("txtConv");
+	destElem.select();
+	const res = document.execCommand("copy");
+	if (!res) {
+		window.alert("결과를 복사할 수 없습니다.");
+	}
+}
+-->
+</script>
+}}}
+
+----
+영타를 숫자로 바꿔 주는 프로그램 없나요?[[BR]]
+a=1, b=2, c=3, .....z=26 -- 영타를 숫자로 바꿔 주는 프로그램 없나요? [timeline:2007-06-11T14:49:27 2007-06-11 오후 11:49]
+----
+이게뭐야 -- 211.205.57.187 [timeline:2007-12-18T09:14:12 2007-12-18 오후 6:14]
+----
+존나조타 짱 -- 머찌 [timeline:2008-01-20T11:27:37 2008-01-20 오후 8:27]
+----
+와 너무 감사드려요[[BR]]
+컴퓨터가 맛이 가서 넘 힘드네요 ㅠㅠㅠ -- 125.177.50.22 [timeline:2008-03-08T11:31:35 2008-03-08 오후 8:31]
+----
+It didn't workTT -- Gamjavas [timeline:2010-04-11T17:49:24 2010-04-12 오전 2:49]
+----
+On my iPad -- Gamjavas [timeline:2010-04-11T17:49:52 2010-04-12 오전 2:49]
+----
+왜 안 되죠 -- ㅁ [timeline:2012-08-04T08:41:29 2012-08-04 오후 5:41]
+----
+왜..... -- 180.65.64.193 [timeline:2012-08-09T06:04:11 2012-08-09 오후 3:04]
+----
+크롬은 안되는 것 같더라구요 익스해서 한번 해보세요 -- 11 [timeline:2012-08-14T11:33:00 2012-08-14 오후 8:33]
+----
+ありがとうございます。 -- [[span(class=trac-author,익명사용자)]] [timeline:2015-01-14T08:41:58+09:00 2015. 1. 14. 오전 8:41:58] [=#comment_1421192518025363]
+----
+정말 유용하게 잘써습니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2015-04-11T14:01:46+09:00 2015. 4. 11. 오후 2:01:46] [=#comment_1428728506587520]
+----
+외국이라 개인컴 아니면 한국어 치기가 매우 힘든데 감사합니다ㅠㅠㅠ -- [[span(class=trac-author,anonymous)]] [timeline:2015-05-13T23:49:17+09:00 May 13, 2015, 11:49:17 PM] [=#comment_1431528557868350]
+----
+오! 덕분에 아이폰에서 비밀번호 입력했습니다. -- [[span(class=trac-author,익명사용자)]] [timeline:2015-05-18T23:38:59+09:00 2015. 5. 18. 오후 11:38:59] [=#comment_1431959939213252]
+----
+유용유용 -- [[span(class=trac-author,익명사용자)]] [timeline:2015-08-11T13:16:42+09:00 2015. 8. 11. 오후 1:16:42] [=#comment_1439266602039934]
+----
+개쩝니다! 감사합니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2015-08-23T20:24:31+09:00 2015. 8. 23. 오후 8:24:31] [=#comment_1440329071977710]
+----
+자바스크립트 코드를 타언어(Object PASCAL)에서 사용할 수 있도록 변환하고자 하는데, 라이선스는 어찌되는지요? -- [[span(class=trac-author,civilian7@…)]] [timeline:2015-09-07T13:44:01+09:00 2015. 9. 7. 오후 1:44:01] [=#comment_1441601041991263]
+
+> 대단치 않은 코드에 관심을 가져 주셔서 고맙습니다 :) License는 Apache License Version 2.0으로 결정하였습니다만, 하시려는 작업에 문제가 된다면 다시 알려주세요. -- [[span(class=trac-author,YT)]] [timeline:2015-09-07T23:49:53+09:00 2015. 9. 7. 오후 11:49:53] [=#comment_1441637393701969]
+----
+감사합니다. 
+브라우저에 적용방법도 알수 잇을까요? -- [[span(class=trac-author,익명사자)]] [timeline:2015-09-18T15:28:19+09:00 2015. 9. 18. 오후 3:28:19] [=#comment_1442557699673119]
+
+> '브라우저에 적용'이 어떤 경우인지 조금 더 설명해 주세요~ -- [[span(class=trac-author,YT)]] [timeline:2015-09-19T09:08:11+09:00 2015. 9. 19. 오전 9:08:11] [=#comment_1442621291201153]
+----
+크롬에서 잘만 되는구만. 2015.09.21 현재. 이런 잉여 싸이트를 만들어 주셔서 감사합니다. -- [[span(class=trac-author,익명사용자)]] [timeline:2015-09-21T09:31:22+09:00 2015. 9. 21. 오전 9:31:22] [=#comment_1442795482702791]
+----
+소스를 좀 볼 수 있을까요 ㅜㅜ -- [[span(class=trac-author,익명사용자)]] [timeline:2015-09-22T01:17:49+09:00 2015. 9. 22. 오전 1:17:49] [=#comment_1442852269518026]
+
+> 이 페이지 제일 밑에 있는 '페이지 편집하기' 버튼을 누르면 소스를 볼 수 있습니다 ☺️ (`<script/>` 태그 부분) -- [[span(class=trac-author,YT)]] [timeline:2015-09-22T23:34:43+09:00 2015. 9. 22. 오후 11:34:43] [=#comment_1442932483076046]
+----
+이런 귀한 사이트가 있다니 ㅠㅠㅜ 감사합니다 ㅠㅠㅠㅠ -- [[span(class=trac-author,anonymous)]] [timeline:2015-11-13T12:50:29+09:00 Nov 13, 2015, 12:50:29 PM] [=#comment_1447386629487875]
+----
+와 감사드려요 진짜 제가 외국에와서 하느라 개인키보드 없이는 한타치기 힘들었는데 이거덕에 지금이겄도 바꾼거고  정말 감사드려요 -- [[span(class=trac-author,익명사용자)]] [timeline:2015-12-10T02:15:36+09:00 Dec 10, 2015, 2:15:36 AM] [=#comment_1449681336950169]
+----
+잘쓰고 갑니다. -- [[span(class=trac-author,익명사용자)]] [timeline:2015-12-29T14:26:48+09:00 2015. 12. 29. 오후 2:26:48] [=#comment_1451366808724894]
+----
+잘써어요  -- [[span(class=trac-author,익명사용자)]] [timeline:2016-01-20T19:57:16+09:00 2016. 1. 20. 오후 7:57:16] [=#comment_1453287436465420]
+----
+i love you. -- [[span(class=trac-author,anonymous)]] [timeline:2016-02-13T22:14:18+09:00 Feb 13, 2016, 10:14:18 PM] [=#comment_1455369258121990]
+----
+정말 감사합니다! -- [[span(class=trac-author,익명사용자)]] [timeline:2016-02-20T17:22:57+09:00 2016. 2. 20. 오후 5:22:57] [=#comment_1455956577489177]
+----
+고맙습니다 으앙 -- [[span(class=trac-author,익명사용자)]] [timeline:2016-03-16T16:06:11+09:00 2016. 3. 16. 오후 4:06:11] [=#comment_1458111971993017]
+----
+야 시발 이게뭐얔ㅋㅋㅋㅋㅋㅋㅋㅋㅋㅋㅋㅋ -- [[span(class=trac-author,익명사용자)]] [timeline:2016-04-16T17:26:04+09:00 2016. 4. 16. 오후 5:26:04] [=#comment_1460795164870858]
+----
+진짜 좋아요ㅠㅠㅠㅠㅠ 하 외국에서 사는데 도서관 컴퓨터에서 유용히 잘 쓰고 있어요 너무 감사합니다!! -- [[span(class=trac-author,익명사용자)]] [timeline:2016-05-01T05:06:17+09:00 2016. 5. 1. 오전 5:06:17] [=#comment_1462046777406178]
+----
+진짜 감사합니다 친구가 욕하는거 다 번역하네요 개 ㄳ -- [[span(class=trac-author,익명사용자)]] [timeline:2016-05-08T09:52:54+09:00 2016. 5. 8. 오전 9:52:54] [=#comment_1462668774483958]
+----
+유용합니다! 감사해요 -- [[span(class=trac-author,익명사용자)]] [timeline:2016-05-09T11:23:15+09:00 2016. 5. 9. 오전 11:23:15] [=#comment_1462760595268358]
+----
+zzzzzzzzzzz -- [[span(class=trac-author,anonymous)]] [timeline:2016-05-10T10:54:50+09:00 May 10, 2016, 10:54:50 AM] [=#comment_1462845290876308]
+----
+안녕하세요? 얼마 전 크롬북을 구매했는데 한글 타자가 안 돼 변환기를 찾다가 님이 제작하신 변화기를 만나 즐겨찾기 해 놓고 사용 중인 이용자입니다. 깔끔하게 잘 만들어 주셔서 감사합니다 :) 그런데 혹시 한/영타 변환기의 변환 결과 칸 옆에 복사하기 버튼을 만들어 주실 수 있나요? 클릭 한 번만 하면 바로 복사할 수 있을 것 같아 참 편할 것 같아서요.  -- [[span(class=trac-author,anonymous)]] [timeline:2018-12-17T19:19:59+09:00 Dec 17, 2018, 7:19:59 PM] [=#comment_1545041999056544]
+> (2년 뒤이기는 합니다만) 복사 버튼을 추가했습니다. -- [[span(class=trac-author,YT)]] [timeline:2021-02-19T09:49:53+09:00 2021. 2. 19. 오전 9:49:53] [=#comment_1613695793498532]
+----
+유용한 프로그램 만들어 주셔서 감사합니다. -- [[span(class=trac-author,anonymous)]] [timeline:2021-01-13T03:08:01+09:00 Jan 13, 2021, 3:08:01 AM] [=#comment_1610474881498196]
+> 활용해 주셔서 감사합니다~ -- [[span(class=trac-author,YT)]] [timeline:2021-02-19T09:51:26+09:00 2021. 2. 19. 오전 9:51:26] [=#comment_1613695886590564]
+----
+이게 뭐하는 덴가요? 2016년제 한영타 변환기 링크 통해서 들어왔는데 아직 활성화 되어있네요 -- [[span(class=trac-author,ㅇㅇ)]] [timeline:2021-01-26T23:15:30+09:00 2021. 1. 26. 오후 11:15:30] [=#comment_1611670530295867]
+> (일단은) 개인 홈페이지입니다. -- [[span(class=trac-author,YT)]] [timeline:2021-02-19T09:51:29+09:00 2021. 2. 19. 오전 9:51:29] [=#comment_1613695889397967]
+----
+한영타 변환기 제가 정말 필요했던 기능이였습니다. 감사합니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2021-01-29T21:46:46+09:00 2021. 1. 29. 오후 9:46:46] [=#comment_1611924406838195]
+> 유용하게 써 주시면 좋습니다~ -- [[span(class=trac-author,YT)]] [timeline:2021-02-19T09:51:31+09:00 2021. 2. 19. 오전 9:51:31] [=#comment_1613695891548317]
+----
+혹시 아직까지도 하시고 계신가요? -- [[span(class=trac-author,keu25073@…)]] [timeline:2021-02-14T21:53:51+09:00 2021. 2. 14. 오후 9:53:51] [=#comment_1613307231792010]
+> 유지만 되고 있기는 합니다만, 필요하신 사항이 있으시면 말씀해 주세요. -- [[span(class=trac-author,YT)]] [timeline:2021-02-19T09:51:33+09:00 2021. 2. 19. 오전 9:51:33] [=#comment_1613695893713988]
+----
+오호라 답글을 달줄몰라 댓글을 하나 더 남깁니다. 좋은 서비스 감사합니다!! -- [[span(class=trac-author,keu25073@…)]] [timeline:2021-02-28T19:44:53+09:00 2021. 2. 28. 오후 7:44:53] [=#comment_1614509093191226]
+> 네 잘 써주셔서 감사합니다- -- [[span(class=trac-author,YT)]] [timeline:2021-02-28T21:24:49+09:00 2021. 2. 28. 오후 9:24:49] [=#comment_1614515089206650]
+----
+신기하네요 -- [[span(class=trac-author,익명사용자)]] [timeline:2021-06-11T10:19:21+09:00 2021. 6. 11. 오전 10:19:21] [=#comment_1623374361104887]
+> 생각보다는 간단한 기능입니다. -- [[span(class=trac-author,YT)]] [timeline:2021-09-26T21:54:42+09:00 2021. 9. 26. 오후 9:54:42] [=#comment_1632660882958171]
+----
+와 잘사용했습니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2021-08-01T12:37:42+09:00 2021. 8. 1. 오후 12:37:42] [=#comment_1627789062568315]
+> 감사합니다. -- [[span(class=trac-author,YT)]] [timeline:2021-09-26T21:54:49+09:00 2021. 9. 26. 오후 9:54:49] [=#comment_1632660889318300]
+----
+안녕하세요 -- [[span(class=trac-author,익명사용자)]] [timeline:2021-08-22T20:47:55+09:00 2021. 8. 22. 오후 8:47:55] [=#comment_1629632875869967]
+> 네 안녕하세요- -- [[span(class=trac-author,YT)]] [timeline:2021-09-26T21:54:57+09:00 2021. 9. 26. 오후 9:54:57] [=#comment_1632660897026727]
+----
+wjdakf dnleogkqslek tjstod! -- [[span(class=trac-author,tjdnjsrmsdidgkrrPwjd)]] [timeline:2021-09-26T19:22:58+09:00 2021. 9. 26. 오후 7:22:58] [=#comment_1632651778623964]
+> 우와아! (???) -- [[span(class=trac-author,YT)]] [timeline:2021-09-26T21:55:35+09:00 2021. 9. 26. 오후 9:55:35] [=#comment_1632660935896876]
+----
+너무조아여 -- [[span(class=trac-author,익명사용자)]] [timeline:2022-04-27T14:44:41+09:00 2022. 4. 27. 오후 2:44:41] [=#comment_1651038281613688]
+> 감사합니다. -- [[span(class=trac-author,YT)]] [timeline:2022-06-06T21:54:01+09:00 2022. 6. 6. 오후 9:54:01] [=#comment_1654520041797047]
+----
+음..안녕하세요? 한영타번역기 잘 쓰는중입니다! -- [[span(class=trac-author,익명사용자)]] [timeline:2022-06-04T13:58:07+09:00 2022. 6. 4. 오후 1:58:07] [=#comment_1654318687918100]
+> 네 사용해 주셔서 감사합니다- -- [[span(class=trac-author,YT)]] [timeline:2022-06-06T21:54:27+09:00 2022. 6. 6. 오후 9:54:27] [=#comment_1654520067205252]
+----
+한영타번역기를 정말 유용하게 쓰고있습니다.
+혹시 만드신 앱 중에서 이렇게 간단하지만 편리하게쓸수있는 앱들이 더 있을까요?
+구경하고싶네요!~~ -- [[span(class=trac-author,eyoo)]] [timeline:2022-07-06T11:37:27+09:00 2022. 7. 6. 오전 11:37:27] [=#comment_1657075047155234]
+> 안녕하세요- 잘 사용해 주셔서 감사합니다. 기술적이지 않으면서 웹 페이지에서 간단히 사용할 수 있을만한 것이 생각나지 않아 더 만들어 진 것은 없는데요, 아이디어 환영합니다. -- [[span(class=trac-author,YT)]] [timeline:2022-07-06T19:58:48+09:00 2022. 7. 6. 오후 7:58:48] [=#comment_1657105128806777]
+----
+그냥 한영타 변환기구나~누가 만들었지~ 했는데 엄청나게 대단하신 분..... 몇년째 잘 쓰고 잇습니다 감사합니다  -- [[span(class=trac-author,익명사용자)]] [timeline:2022-08-27T03:31:20+09:00 2022. 8. 27. 오전 3:31:20] [=#comment_1661538680826629]
+> 특별한 변경 없는 페이지인데도 꾸준히 잘 사용해 주신다니 감사합니다. -- [[span(class=trac-author,YT)]] [timeline:2022-08-29T16:44:31+09:00 2022. 8. 29. 오후 4:44:31] [=#comment_1661759071260741]
+----
+진짜 이런거 찾았는데 ㅠㅠ 고맙습니다 ㅠㅠㅠ -- [[span(class=trac-author,익명사용자)]] [timeline:2022-12-16T18:41:02+09:00 2022. 12. 16. 오후 6:41:02] [=#comment_1671183662611168]
+> 한영타 변환기를 사용하신 것 같습니다. 잘 사용해 주셔서 고맙습니다. -- [[span(class=trac-author,YT)]] [timeline:2023-01-15T23:08:59+09:00 2023. 1. 15. 오후 11:08:59] [=#comment_1673791739596574]
+----
+이런거 만들어주신 천재분께 감사합니다
+정말 잘쓰고있어요 특히 친구들 욕문장 번역할때 딱입니다 
+이런거 만들어주셔서 감사합니다!!!!!!!!!! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-01-23T15:50:45+09:00 2023. 1. 23. 오후 3:50:45] [=#comment_1674456645537570]
+> 이 페이지 처음 만들었을 때나 지금이나 용도는 같네요 ㅎㅎ 감사합니다. -- [[span(class=trac-author,YT)]] [timeline:2023-01-24T21:19:34+09:00 2023. 1. 24. 오후 9:19:34] [=#comment_1674562774176243]
+----
+와.. 근 20년동안 많은 분들이 아주 유용하게 쓰는 웹사이트군요.. 이를 메이저화시켜야 한다고 생각합니다!! -- [[span(class=trac-author,사랑합니다. 이 사이트의 특별한 이름이 뭔지는 모르겠지만, 사랑해요 한영변환기!)]] [timeline:2023-01-25T01:29:57+09:00 2023. 1. 25. 오전 1:29:57] [=#comment_1674577797478964]
+> 소소하게 사용해 주시는 것으로도 좋습니다~ -- [[span(class=trac-author,YT)]] [timeline:2023-02-01T18:55:41+09:00 2023. 2. 1. 오후 6:55:41] [=#comment_1675245341282142]
+----
+오 십년이 지나도 잘쓰이는 이런 사이트 좋네요  -- [[span(class=trac-author,손흥민(진짜토트넘선수 한국 국대 그 선수 맞음 ㅋㅋㅋ))]] [timeline:2023-01-26T00:48:05+09:00 2023. 1. 26. 오전 12:48:05] [=#comment_1674661685358313]
+> 잘 사용해 주셔서 감사드립니다. -- [[span(class=trac-author,YT)]] [timeline:2023-02-01T18:57:29+09:00 2023. 2. 1. 오후 6:57:29] [=#comment_1675245449175791]
+----
+정말 감사합니다 -- [[span(class=trac-author,걍)]] [timeline:2023-02-15T15:57:53+09:00 2023. 2. 15. 오후 3:57:53] [=#comment_1676444273767069]
+> 고맙습니다~ -- [[span(class=trac-author,YT)]] [timeline:2023-02-15T22:43:17+09:00 2023. 2. 15. 오후 10:43:17] [=#comment_1676468597395928]
+----
+뿌슝빠슝
+
+머야 아직도 관리하시네 광고하나 다시죠 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-02-17T17:27:53+09:00 2023. 2. 17. 오후 5:27:53] [=#comment_1676622473673050]
+
+> 저...도 광고 차단 프로그램을 잘 쓰고 있어서 광고 붙일 생각은 안 하고 있었습니다. 감사해요- -- [[span(class=trac-author,YT)]] [timeline:2023-02-20T15:56:16+09:00 2023. 2. 20. 오후 3:56:16] [=#comment_1676876176477239]
+----
+좋은 웹프로그램이네요 good -- [[span(class=trac-author,익명사용자)]] [timeline:2023-02-22T16:33:36+09:00 2023. 2. 22. 오후 4:33:36] [=#comment_1677051216958284]
+----
+거의 20년이네..ㄷ -- [[span(class=trac-author,익명사용자)]] [timeline:2023-02-27T23:54:24+09:00 2023. 2. 27. 오후 11:54:24] [=#comment_1677509664595840]
+----
+. -- [[span(class=trac-author,익명사용자)]] [timeline:2023-03-01T14:10:25+09:00 2023. 3. 1. 오후 2:10:25] [=#comment_1677647425903871]
+----
+사이트 관리자님 사이트 관리를 하시면 세벌식을 영타로 변환하는 기능도 추가해주세요. -- [[span(class=trac-author,익명사용자)]] [timeline:2023-03-02T07:39:59+09:00 2023. 3. 2. 오전 7:39:59] [=#comment_1677710399517721]
+----
+안녕하세요! 한영타 변환기 너무 잘 사용하고 있습니다. 소스코드를 응용해서 맥 OS에서 쉽게 바로 변환할 수 있도록 만들고 싶습니다. 여기 변환기에 적용된 소스코드를 적용해서 만들어도 될까 싶어 여쭙습니다.. -- [[span(class=trac-author,pain103@…)]] [timeline:2023-03-04T14:50:31+09:00 2023. 3. 4. 오후 2:50:31] [=#comment_1677909031624791]
+----
+야무지다 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-03-04T23:08:19+09:00 2023. 3. 4. 오후 11:08:19] [=#comment_1677938899480290]
+----
+3/14 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-03-14T17:03:42+09:00 2023/03/14 17:03:42] [=#comment_1678781022967866]
+----
+세벌식 버전은 없습니까? -- [[span(class=trac-author,익명사용자)]] [timeline:2023-03-15T14:27:00+09:00 2023. 3. 15. 오후 2:27:00] [=#comment_1678858020115379]
+----
+서버 비용이 나오나요? 어떻게 이렇게 오래 관리하고 계신지..신기하네요
+ -- [[span(class=trac-author,궁금맨이야)]] [timeline:2023-03-20T23:41:27+09:00 2023. 3. 20. 오후 11:41:27] [=#comment_1679323287035106]
+----
+외국에 살고있는데 즐겨찾기 해놓고 너무 유용하게 잘 쓰고 있어요 넘 감사합니다!! -- [[span(class=trac-author,anonymous)]] [timeline:2023-03-22T16:24:01+09:00 Mar 22, 2023, 4:24:01 PM] [=#comment_1679469841883221]
+----
+레전드입니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-03-23T18:07:50+09:00 2023. 3. 23. 오후 6:07:50] [=#comment_1679562470188285]
+----
+3/24 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-03-24T14:37:17+09:00 2023/03/24 14:37:17] [=#comment_1679636237120157]
+----
+친구들이랑 헛소리 하는데 유용하게 쓰고 있습니다 감사해요 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-03-27T09:08:06+09:00 2023. 3. 27. 오전 9:08:06] [=#comment_1679875686978725]
+----
+ 3/30 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-03-30T11:19:41+09:00 2023/03/30 11:19:41] [=#comment_1680142781241595]
+----
+3/31 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-03-31T10:53:54+09:00 2023/03/31 10:53:54] [=#comment_1680227634021412]
+----
+사랑해요 최고다 진짜 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-04-02T22:15:59+09:00 2023. 4. 2. 오후 10:15:59] [=#comment_1680441359729059]
+----
+4/4출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-04T09:43:23+09:00 2023/04/04 9:43:23] [=#comment_1680569003128474]
+----
+진짜 많이 감사합니다. -- [[span(class=trac-author,천문돌이)]] [timeline:2023-04-05T20:23:20+09:00 2023. 4. 5. 오후 8:23:20] [=#comment_1680693800342932]
+----
+4/7출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-07T09:41:15+09:00 2023/04/07 9:41:15] [=#comment_1680828075591599]
+----
+4/10출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-10T09:26:01+09:00 2023/04/10 9:26:01] [=#comment_1681086361252409]
+----
+4/11출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-11T15:51:09+09:00 2023/04/11 15:51:09] [=#comment_1681195869884811]
+----
+4/12출첵 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-04-12T18:11:53+09:00 2023. 4. 12. 오후 6:11:53] [=#comment_1681290713953437]
+----
+4/12출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-04-13T13:29:15+09:00 2023/04/13 13:29:15] [=#comment_1681360155999217]
+----
+4/13 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-04-13T13:29:37+09:00 2023/04/13 13:29:37] [=#comment_1681360177136573]
+----
+4/14 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-04-14T13:45:59+09:00 2023/04/14 13:45:59] [=#comment_1681447559693760]
+----
+응 출첵 15일 안했쬬? -- [[span(class=trac-author,익)]] [timeline:2023-04-16T11:16:03+09:00 2023. 4. 16. 오전 11:16:03] [=#comment_1681611363843263]
+----
+4/17 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-17T16:43:41+09:00 2023/04/17 16:43:41] [=#comment_1681717421783047]
+----
+출첵은 평일해만 합니다  -- [[span(class=trac-author,匿名)]] [timeline:2023-04-17T16:44:01+09:00 2023/04/17 16:44:01] [=#comment_1681717441043408]
+----
+4/18 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-18T09:07:41+09:00 2023/04/18 9:07:41] [=#comment_1681776461148734]
+----
+4/19 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-19T09:53:28+09:00 2023/04/19 9:53:28] [=#comment_1681865608810031]
+----
+dhk dlrj wha eoqkrdls emt -- [[span(class=trac-author,익명사용자)]] [timeline:2023-04-19T10:50:41+09:00 2023. 4. 19. 오전 10:50:41] [=#comment_1681869041000452]
+----
+4/20 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-20T09:18:03+09:00 2023/04/20 9:18:03] [=#comment_1681949883961939]
+----
+진짜 개조아요 감사합니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-04-20T19:20:16+09:00 2023. 4. 20. 오후 7:20:16] [=#comment_1681986016424029]
+----
+4/21 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-21T10:53:29+09:00 2023/04/21 10:53:29] [=#comment_1682042009970764]
+----
+개조타 -- [[span(class=trac-author,나는나)]] [timeline:2023-04-21T13:28:12+09:00 2023. 4. 21. 오후 1:28:12] [=#comment_1682051292039822]
+----
+4/24 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-24T09:49:10+09:00 2023/04/24 9:49:10] [=#comment_1682297350531604]
+----
+댓글 기능이 있었네;; -- [[span(class=trac-author,아ㅏ아아아아ㅏfog)]] [timeline:2023-04-24T12:12:53+09:00 24 Apr 2023, 12:12:53] [=#comment_1682305973042420]
+----
+4/25 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-04-25T09:03:23+09:00 2023/04/25 9:03:23] [=#comment_1682381003117014]
+----
+미국으로 이사와서 걱정했었는데 정말 감사합니다! 학교에서 잘 쓰고 있어요. -- [[span(class=trac-author,anonymous)]] [timeline:2023-04-26T03:13:05+09:00 Apr 26, 2023, 3:13:05 AM] [=#comment_1682446385351688]
+----
+4/26출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-26T11:46:19+09:00 2023/04/26 11:46:19] [=#comment_1682477179528446]
+----
+※공지 
+4/29~5/7은 골든위크로인해 출석체크는 쉽니다  -- [[span(class=trac-author,匿名)]] [timeline:2023-04-26T11:48:38+09:00 2023/04/26 11:48:38] [=#comment_1682477318476066]
+----
+와 이런 컴퓨터 시설 안좋은 영국 학교에서 지금 한국어 검색 하고싶어서 찾아왔는데 진짜 최고에요 짱짱... -- [[span(class=trac-author,tytytytyty xxx)]] [timeline:2023-04-26T17:16:54+09:00 Apr 26, 2023, 5:16:54 PM] [=#comment_1682497014164553]
+----
+4/27출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-27T09:13:05+09:00 2023/04/27 9:13:05] [=#comment_1682554385779777]
+----
+4/28출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-04-28T09:15:03+09:00 2023/04/28 9:15:03] [=#comment_1682640903933904]
+----
+dhkd
+ -- [[span(class=trac-author,익명사용자)]] [timeline:2023-05-06T11:26:34+09:00 2023. 5. 6. 오전 11:26:34] [=#comment_1683339994382895]
+----
+z -- [[span(class=trac-author,djdfajk; )]] [timeline:2023-05-06T11:26:52+09:00 2023. 5. 6. 오전 11:26:52] [=#comment_1683340012768256]
+----
+dlrjf qjsdurgoTekaus wkdtlsdms rhtn wkftodruTrh cjswo cnrgkgkamslek -- [[span(class=trac-author,dlrauddldpdy)]] [timeline:2023-05-06T11:27:36+09:00 2023. 5. 6. 오전 11:27:36] [=#comment_1683340056531486]
+----
+5/8 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-08T10:46:09+09:00 2023/05/08 10:46:09] [=#comment_1683510369260411]
+----
+5/9 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-09T14:04:57+09:00 2023/05/09 14:04:57] [=#comment_1683608697469782]
+----
+5/10 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-10T10:22:45+09:00 2023/05/10 10:22:45] [=#comment_1683681765323870]
+----
+5/11 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-11T10:34:50+09:00 2023/05/11 10:34:50] [=#comment_1683768890339361]
+----
+5/12 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-12T09:27:19+09:00 2023/05/12 9:27:19] [=#comment_1683851239223545]
+----
+5/15 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-15T09:04:01+09:00 2023/05/15 9:04:01] [=#comment_1684109041555470]
+----
+잘쓰고있습니당 -- [[span(class=trac-author,캐나다유학생)]] [timeline:2023-05-15T22:13:07+09:00 2023. 5. 15. 오후 10:13:07] [=#comment_1684156387249368]
+----
+5/16 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-05-16T09:05:59+09:00 2023/05/16 9:05:59] [=#comment_1684195559534860]
+----
+5/17 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-17T08:53:59+09:00 2023/05/17 8:53:59] [=#comment_1684281239846561]
+----
+5/18 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-18T09:03:45+09:00 2023/05/18 9:03:45] [=#comment_1684368225752185]
+----
+와우! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-05-18T22:19:13+09:00 2023. 5. 18. 오후 10:19:13] [=#comment_1684415953575656]
+----
+5/19 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-19T10:07:28+09:00 2023/05/19 10:07:28] [=#comment_1684458448826288]
+----
+5/22 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-22T09:05:03+09:00 2023/05/22 9:05:03] [=#comment_1684713903230732]
+----
+5/23 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-05-23T09:19:08+09:00 2023/05/23 9:19:08] [=#comment_1684801148848280]
+----
+dkssud sjsms rmeofh rkwuek qnxgu qusghksgoTrpTwl? dkanfua whgdk. rmsid snrk dlrjf qusghks ehffuwnsrjt aksdmfheh whgdmsrjf. sjan rkqwkrtmfjqwlaks godqhrgktlrlf. godqhrgkrh wmfrjdns tkfa tktlrlfmf. dmddnjsgkqslek. 제작하신분도 행복하세요. 위에 어느분 말 마따나 서버 유지는 어떻게 하시는지.. 딱 이런게 필요했던 유학생으로써 감사하단 말 밖에는 나오지 않네요. 행복하시고 건강하세요. 감사합니다. -- [[span(class=trac-author,dbgkrtod)]] [timeline:2023-05-24T03:11:21+09:00 May 24, 2023, 3:11:21 AM] [=#comment_1684865481208028]
+----
+5/24 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-24T09:49:08+09:00 2023/05/24 9:49:08] [=#comment_1684889348609086]
+----
+5/25 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-25T10:24:05+09:00 2023/05/25 10:24:05] [=#comment_1684977845809461]
+----
+5/26 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-26T11:41:16+09:00 2023/05/26 11:41:16] [=#comment_1685068876259245]
+----
+진짜감사합니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-05-27T09:38:39+09:00 2023. 5. 27. 오전 9:38:39] [=#comment_1685147919197541]
+----
+ghrtl dkdlzbrk dhqordltkddlsrkdy? wlsWK cjswospdy -- [[span(class=trac-author,익명사용자)]] [timeline:2023-05-29T09:58:52+09:00 2023. 5. 29. 오전 9:58:52] [=#comment_1685321932542577]
+----
+5/29 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-29T10:13:53+09:00 2023/05/29 10:13:53] [=#comment_1685322833391274]
+----
+5/30 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-30T09:28:06+09:00 2023/05/30 9:28:06] [=#comment_1685406486443467]
+----
+5/31 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-05-31T09:04:35+09:00 2023/05/31 9:04:35] [=#comment_1685491475159672]
+----
+6/1 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-01T08:59:14+09:00 2023/06/01 8:59:14] [=#comment_1685577554817337]
+----
+6/2 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-02T11:05:46+09:00 2023/06/02 11:05:46] [=#comment_1685671546338165]
+----
+출첵왜함 진짜 미친건가 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-06-02T23:28:49+09:00 2023. 6. 2. 오후 11:28:49] [=#comment_1685716129743188]
+----
+6/5 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-05T09:06:46+09:00 2023/06/05 9:06:46] [=#comment_1685923606496251]
+----
+예시에 있는 문장 그대로 쳐보니 애인구함이랑 사이트 이름이네요 ㅋㅋ 소소한 이스터에그도 재밋어요 잘쓰고 있습니다! 만들어주셔서 감사해용 -- [[span(class=trac-author,ghj)]] [timeline:2023-06-06T01:45:56+09:00 Jun 6, 2023, 1:45:56 AM] [=#comment_1685983556743098]
+----
+6/6 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-06T10:53:07+09:00 2023/06/06 10:53:07] [=#comment_1686016387382360]
+----
+6/7 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-06-07T09:31:23+09:00 2023/06/07 9:31:23] [=#comment_1686097883216432]
+----
+6/8 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-06-08T09:14:11+09:00 2023/06/08 9:14:11] [=#comment_1686183251081552]
+----
+6/9 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-09T11:31:00+09:00 2023/06/09 11:31:00] [=#comment_1686277860463968]
+----
+cnfcorfjdi rm Rmsrlfh tkfdmf Qorh dnsehddmf gofk anjgksms wltrjflsi dj? -- [[span(class=trac-author,익명사용자)]] [timeline:2023-06-09T17:26:56+09:00 2023. 6. 9. 오후 5:26:56] [=#comment_1686299216158452]
+----
+6/12 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-06-12T09:40:23+09:00 2023/06/12 9:40:23] [=#comment_1686530423867091]
+----
+킹왕짱!! 노가다에서 해방시켜 주셔서 감사합니다. -- [[span(class=trac-author,익명사용자)]] [timeline:2023-06-12T14:22:19+09:00 2023. 6. 12. 오후 2:22:19] [=#comment_1686547339118128]
+----
+6/13 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-13T09:06:48+09:00 2023/06/13 9:06:48] [=#comment_1686614808837330]
+----
+6/14 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-14T09:14:24+09:00 2023/06/14 9:14:24] [=#comment_1686701664450273]
+----
+와... 진짜좋다...
+ -- [[span(class=trac-author,익명사용자)]] [timeline:2023-06-14T20:48:08+09:00 2023. 6. 14. 오후 8:48:08] [=#comment_1686743288040566]
+----
+6/15 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-15T09:26:02+09:00 2023/06/15 9:26:02] [=#comment_1686788762670150]
+----
+6/16 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-16T09:54:03+09:00 2023/06/16 9:54:03] [=#comment_1686876843663862]
+----
+불금 ㅂㅂ -- [[span(class=trac-author,匿名)]] [timeline:2023-06-16T17:30:19+09:00 2023/06/16 17:30:19] [=#comment_1686904219450716]
+----
+만들어주셔서 감사합니다. 잘 사용하고 있습니다! 글을 쓰고 싶은데 남들에게 내용 보여주기 싫을 때 사용하기 좋네요. -- [[span(class=trac-author,익명사용자)]] [timeline:2023-06-19T00:29:27+09:00 2023. 6. 19. 오전 12:29:27] [=#comment_1687102167231051]
+----
+6/19 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-19T09:20:45+09:00 2023/06/19 9:20:45] [=#comment_1687134045482997]
+----
+6/20 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-20T09:39:33+09:00 2023/06/20 9:39:33] [=#comment_1687221573143353]
+----
+6/21 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-21T09:10:39+09:00 2023/06/21 9:10:39] [=#comment_1687306239701274]
+----
+오홍홍 좋와용 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-06-21T11:10:36+09:00 2023. 6. 21. 오전 11:10:36] [=#comment_1687313436189139]
+----
+6/22 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-22T09:20:39+09:00 2023/06/22 9:20:39] [=#comment_1687393239928872]
+----
+6/23 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-23T13:23:14+09:00 2023/06/23 13:23:14] [=#comment_1687494194622973]
+----
+불금 ㅂㅂ -- [[span(class=trac-author,匿名)]] [timeline:2023-06-23T13:23:24+09:00 2023/06/23 13:23:24] [=#comment_1687494204007291]
+----
+6/26 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-06-26T09:22:53+09:00 2023/06/26 9:22:53] [=#comment_1687738973708829]
+----
+6/27 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-27T04:58:42+09:00 2023. 6. 27. 오전 4:58:42] [=#comment_1687809522662300]
+----
+6/27 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-27T09:05:50+09:00 2023/06/27 9:05:50] [=#comment_1687824350212102]
+----
+6/28 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-28T10:30:25+09:00 2023/06/28 10:30:25] [=#comment_1687915825166373]
+----
+6/29 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-29T09:13:44+09:00 2023/06/29 9:13:44] [=#comment_1687997624157496]
+----
+6/30 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-06-30T10:21:11+09:00 2023/06/30 10:21:11] [=#comment_1688088071984939]
+----
+좋아용 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-07-01T15:15:40+09:00 2023. 7. 1. 오후 3:15:40] [=#comment_1688192140214550]
+----
+7/3 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-03T09:14:12+09:00 2023/07/03 9:14:12] [=#comment_1688343252699400]
+----
+7/4 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-04T09:11:20+09:00 2023/07/04 9:11:20] [=#comment_1688429480731145]
+----
+7/5 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-05T09:20:21+09:00 2023/07/05 9:20:21] [=#comment_1688516421325290]
+----
+7/5 저도 출첵 요새는 왜 댓글 안달아주시나요~ 이런거 만들어주셔서 감사합니 -- [[span(class=trac-author,갱간부)]] [timeline:2023-07-05T20:33:00+09:00 2023. 7. 5. 오후 8:33:00] [=#comment_1688556780208265]
+----
+7/6 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-06T09:55:58+09:00 2023/07/06 9:55:58] [=#comment_1688604958205902]
+----
+7/7 출첵 777777777 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-07T09:13:43+09:00 2023/07/07 9:13:43] [=#comment_1688688823289452]
+----
+유용하게 쓸게요 감사합니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-07-07T10:56:32+09:00 2023. 7. 7. 오전 10:56:32] [=#comment_1688694992527551]
+----
+7/8 출첵 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-07-08T16:25:26+09:00 2023. 7. 8. 오후 4:25:26] [=#comment_1688801126450872]
+----
+7/10 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-10T09:06:39+09:00 2023/07/10 9:06:39] [=#comment_1688947599644683]
+----
+7/11 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-11T10:30:34+09:00 2023/07/11 10:30:34] [=#comment_1689039034470465]
+----
+7/12 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-12T11:23:27+09:00 2023/07/12 11:23:27] [=#comment_1689128607490106]
+----
+근데 출첵을 왜하는거예요? -- [[span(class=trac-author,匿名)]] [timeline:2023-07-12T17:17:18+09:00 2023. 7. 12. 오후 5:17:18] [=#comment_1689149838204353]
+----
+궁금궁금 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-12T17:17:43+09:00 2023. 7. 12. 오후 5:17:43] [=#comment_1689149863052430]
+----
+7/13 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-13T09:09:57+09:00 2023/07/13 9:09:57] [=#comment_1689206997538887]
+----
+7/14 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-14T09:30:03+09:00 2023/07/14 9:30:03] [=#comment_1689294603146255]
+----
+이거긴 해 ㅋㅋ - 평촌고 방시혁 ㅋ -- [[span(class=trac-author,익명사용자)]] [timeline:2023-07-14T14:11:24+09:00 2023. 7. 14. 오후 2:11:24] [=#comment_1689311484826210]
+----
+7/18 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-18T09:04:03+09:00 2023/07/18 9:04:03] [=#comment_1689638643856799]
+----
+7/19 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-07-19T09:06:28+09:00 2023/07/19 9:06:28] [=#comment_1689725188155917]
+----
+7/21 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-21T09:46:33+09:00 2023/07/21 9:46:33] [=#comment_1689900393321064]
+----
+7/24 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-24T09:06:06+09:00 2023/07/24 9:06:06] [=#comment_1690157166150971]
+----
+7/25 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-25T09:25:12+09:00 2023/07/25 9:25:12] [=#comment_1690244712874092]
+----
+7/26 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-26T09:19:18+09:00 2023/07/26 9:19:18] [=#comment_1690330758303273]
+----
+7/28 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-28T09:19:36+09:00 2023/07/28 9:19:36] [=#comment_1690503576490484]
+----
+7/31 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-07-31T09:10:27+09:00 2023/07/31 9:10:27] [=#comment_1690762227149329]
+----
+8/1 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-01T09:06:25+09:00 2023/08/01 9:06:25] [=#comment_1690848385470703]
+----
+감사합니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-08-02T03:05:32+09:00 2023. 8. 2. 오전 3:05:32] [=#comment_1690913132991611]
+----
+8/2 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-02T10:07:10+09:00 2023/08/02 10:07:10] [=#comment_1690938430859660]
+----
+8/3 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-03T09:21:13+09:00 2023/08/03 9:21:13] [=#comment_1691022073308352]
+----
+와우 사람이 있었군요ㄷㄷ -- [[span(class=trac-author,익명사용자_22)]] [timeline:2023-08-03T22:19:09+09:00 2023. 8. 3. 오후 10:19:09] [=#comment_1691068749296249]
+----
+8/4 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-04T13:28:54+09:00 2023/08/04 13:28:54] [=#comment_1691123334021189]
+----
+오 대박 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-08-04T22:35:24+09:00 2023. 8. 4. 오후 10:35:24] [=#comment_1691156124312641]
+----
+8/7 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-07T15:28:23+09:00 2023/08/07 15:28:23] [=#comment_1691389703627131]
+----
+8/8 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-08T09:03:25+09:00 2023/08/08 9:03:25] [=#comment_1691453005429360]
+----
+8/10 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-08-10T09:40:59+09:00 2023/08/10 9:40:59] [=#comment_1691628059894113]
+----
+8/11 ~ 8/20 여름휴가로 출석은 쉽니다 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-10T09:41:22+09:00 2023/08/10 9:41:22] [=#comment_1691628082838171]
+----
+I LOVE YOU -- [[span(class=trac-author,익명사용자)]] [timeline:2023-08-11T00:01:52+09:00 2023. 8. 11. 오전 12:01:52] [=#comment_1691679712703136]
+----
+20년 동안 사용돼왔다니ㄷㄷㄷ -- [[span(class=trac-author,익명사용자)]] [timeline:2023-08-12T13:06:40+09:00 2023. 8. 12. 오후 1:06:40] [=#comment_1691813200319754]
+----
+해외유학중인데 영어로 세팅된 대학교컴퓨터에서 한글로 검색할거 있을때 한국어 추가하기 귀찮았는데 변환기 덕에 귀찮음을 덜었네요 유용하게 사용하고 있습니다 고마워요 -- [[span(class=trac-author,anonymous)]] [timeline:2023-08-15T10:08:41+09:00 Aug 15, 2023, 10:08:41 AM] [=#comment_1692061721124254]
+----
+20년이나 지속되어 왔는데 이 사이트를 내가 모르고있었다고?? -- [[span(class=trac-author,익명사용자)]] [timeline:2023-08-18T10:28:59+09:00 2023. 8. 18. 오전 10:28:59] [=#comment_1692322139322608]
+----
+ㄹㅇ 근본이다 게이들아 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-08-20T20:49:56+09:00 2023. 8. 20. 오후 8:49:56] [=#comment_1692532196945549]
+----
+8/21 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-21T09:06:29+09:00 2023/08/21 9:06:29] [=#comment_1692576389295784]
+----
+ㄳㅅㄳㅅㄳㄱ -- [[span(class=trac-author,이거지)]] [timeline:2023-08-21T20:31:52+09:00 2023. 8. 21. 오후 8:31:52] [=#comment_1692617512552297]
+----
+8/22 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-08-22T13:28:22+09:00 2023/08/22 13:28:22] [=#comment_1692678502136929]
+----
+8/23 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-08-23T09:05:41+09:00 2023/08/23 9:05:41] [=#comment_1692749141498245]
+----
+gamsahamnida
+ -- [[span(class=trac-author,匿名)]] [timeline:2023-08-23T17:37:55+09:00 2023/08/23 17:37:55] [=#comment_1692779875040544]
+----
+thanks -- [[span(class=trac-author,익명사용자)]] [timeline:2023-08-23T23:42:14+09:00 2023. 8. 23. 오후 11:42:14] [=#comment_1692801734464393]
+----
+8/24 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-24T10:29:34+09:00 2023/08/24 10:29:34] [=#comment_1692840574641318]
+----
+8/25 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-25T09:09:10+09:00 2023/08/25 9:09:10] [=#comment_1692922150462104]
+----
+8/28 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-28T11:18:20+09:00 2023/08/28 11:18:20] [=#comment_1693189100040429]
+----
+8/29 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-29T08:57:10+09:00 2023/08/29 8:57:10] [=#comment_1693267030101195]
+----
+정말 좋네요. 편하게 사용할 수 있어서 감사합니다. -- [[span(class=trac-author,Johnnie)]] [timeline:2023-08-29T08:59:00+09:00 2023. 8. 29. 오전 8:59:00] [=#comment_1693267140251996]
+----
+8/30 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-08-30T09:39:46+09:00 2023/08/30 9:39:46] [=#comment_1693355986040436]
+----
+8/31 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-08-31T08:59:59+09:00 2023/08/31 8:59:59] [=#comment_1693439999547493]
+----
+yeee -- [[span(class=trac-author,anonymous)]] [timeline:2023-08-31T10:39:31+09:00 31 Aug 2023, 10:39:31] [=#comment_1693445971922154]
+----
+9/1 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-01T09:17:51+09:00 2023/09/01 9:17:51] [=#comment_1693527471611486]
+----
+これなに? -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-02T00:08:15+09:00 2023. 9. 2. 오전 12:08:15] [=#comment_1693580895724478]
+----
+9/4 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-04T10:32:46+09:00 2023/09/04 10:32:46] [=#comment_1693791166267489]
+----
+ㅇㅇ -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-04T15:22:46+09:00 2023. 9. 4. 오후 3:22:46] [=#comment_1693808566270047]
+----
+9/5 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-05T09:07:00+09:00 2023/09/05 9:07:00] [=#comment_1693872420555992]
+----
+9/6 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-06T09:28:38+09:00 2023/09/06 9:28:38] [=#comment_1693960118670286]
+----
+최고! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-06T23:13:12+09:00 2023. 9. 6. 오후 11:13:12] [=#comment_1694009592876039]
+----
+9/7 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-07T09:05:56+09:00 2023/09/07 9:05:56] [=#comment_1694045156501232]
+----
+9/8 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-09-08T16:53:43+09:00 2023/09/08 16:53:43] [=#comment_1694159623225839]
+----
+9/11 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-11T09:06:49+09:00 2023/09/11 9:06:49] [=#comment_1694390809564233]
+----
+9/12 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-09-12T09:02:40+09:00 2023/09/12 9:02:40] [=#comment_1694476960868028]
+----
+9/13 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-13T09:21:16+09:00 2023/09/13 9:21:16] [=#comment_1694564476085599]
+----
+9/14 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-14T09:26:39+09:00 2023/09/14 9:26:39] [=#comment_1694651199293745]
+----
+9/15 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-15T09:17:24+09:00 2023/09/15 9:17:24] [=#comment_1694737044260447]
+----
+잘 쓰고 있어요 감사합니다!! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-15T16:44:53+09:00 2023. 9. 15. 오후 4:44:53] [=#comment_1694763893235144]
+----
+뭐야 출첵 왜끊김? -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-18T13:41:51+09:00 2023. 9. 18. 오후 1:41:51] [=#comment_1695012111771489]
+----
+sjan whgdkdy!! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-19T02:19:24+09:00 2023. 9. 19. 오전 2:19:24] [=#comment_1695057564457551]
+----
+9/19 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-19T09:06:28+09:00 2023/09/19 9:06:28] [=#comment_1695081988305644]
+----
+주말에는 출첵 끊긴다네요 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-19T21:33:35+09:00 2023. 9. 19. 오후 9:33:35] [=#comment_1695126815145107]
+----
+근데 그거 제외해도 하루 넘었네 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-19T21:34:08+09:00 2023. 9. 19. 오후 9:34:08] [=#comment_1695126848822666]
+----
+9/20 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-20T09:03:01+09:00 2023/09/20 9:03:01] [=#comment_1695168181661285]
+----
+9/18(월)은 현지휴일로 쉬었습니다^^ -- [[span(class=trac-author,匿名)]] [timeline:2023-09-20T09:04:06+09:00 2023/09/20 9:04:06] [=#comment_1695168246111655]
+----
+컴터 한글 다 날아가서 쓰는중입니다
+포맷해야하는데 그전까지 잘 쓰겠습니다 
+감사합니다. -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-20T10:12:34+09:00 2023. 9. 20. 오전 10:12:34] [=#comment_1695172354790314]
+----
+출첵님 게임같은거 하시나요? -- [[span(class=trac-author,ㅇㅇ)]] [timeline:2023-09-20T21:28:49+09:00 2023. 9. 20. 오후 9:28:49] [=#comment_1695212929044943]
+----
+9/21 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-21T09:03:57+09:00 2023/09/21 9:03:57] [=#comment_1695254637745351]
+----
+9/22 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-22T09:13:57+09:00 2023/09/22 9:13:57] [=#comment_1695341637084707]
+----
+9/23 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-25T08:59:56+09:00 2023/09/25 8:59:56] [=#comment_1695599996916504]
+----
+9/25 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-25T10:16:43+09:00 2023/09/25 10:16:43] [=#comment_1695604603689375]
+----
+급하게 키보드로 메모 적었는데 영어여서 좌절하고 있었는데 감사합니다! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-09-25T14:28:00+09:00 2023. 9. 25. 오후 2:28:00] [=#comment_1695619680315151]
+----
+9/26 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-26T09:06:36+09:00 2023/09/26 9:06:36] [=#comment_1695686796792635]
+----
+안녕하세요 올리버 쌤입니다~ 와~ 감사합니다~! -- [[span(class=trac-author,올리버쌤)]] [timeline:2023-09-28T02:08:26+09:00 2023. 9. 28. 오전 2:08:26] [=#comment_1695834506062491]
+----
+9/28 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-28T09:08:41+09:00 2023/09/28 9:08:41] [=#comment_1695859721868459]
+----
+9/29(금)은 휴가로인해 출석쉽니다 -- [[span(class=trac-author,匿名)]] [timeline:2023-09-28T09:09:14+09:00 2023/09/28 9:09:14] [=#comment_1695859754319365]
+----
+10/2 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-10-02T09:10:14+09:00 2023/10/02 9:10:14] [=#comment_1696205414663624]
+----
+10/3 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-03T09:01:23+09:00 2023/10/03 9:01:23] [=#comment_1696291283534561]
+----
+개조아 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-10-03T16:44:29+09:00 2023. 10. 3. 오후 4:44:29] [=#comment_1696319069250059]
+----
+10/4 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-04T08:56:53+09:00 2023/10/04 8:56:53] [=#comment_1696377413476741]
+----
+10/5 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-05T09:06:39+09:00 2023/10/05 9:06:39] [=#comment_1696464399929792]
+----
+10/6 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-06T08:51:29+09:00 2023/10/06 8:51:29] [=#comment_1696549889860362]
+----
+10/9(월)은 휴일로 인해 출석은 쉽니다 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-06T14:38:25+09:00 2023/10/06 14:38:25] [=#comment_1696570705826185]
+----
+10/10 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-10-10T09:17:41+09:00 2023/10/10 9:17:41] [=#comment_1696897061387077]
+----
+10/11 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-11T09:19:13+09:00 2023/10/11 9:19:13] [=#comment_1696983553410815]
+----
+10/12 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-12T09:21:26+09:00 2023/10/12 9:21:26] [=#comment_1697070086421734]
+----
+10/13 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-13T10:33:45+09:00 2023/10/13 10:33:45] [=#comment_1697160825819799]
+----
+덕분에 잘 썼어요 감사합니다!! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-10-13T10:41:50+09:00 2023. 10. 13. 오전 10:41:50] [=#comment_1697161310177547]
+----
+지금도 쓰는 사람들이 있네 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-10-14T22:35:26+09:00 2023. 10. 14. 오후 10:35:26] [=#comment_1697290526396717]
+----
+10/16 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-16T09:12:23+09:00 2023/10/16 9:12:23] [=#comment_1697415143565451]
+----
+10/17 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-17T10:06:10+09:00 2023/10/17 10:06:10] [=#comment_1697504770649611]
+----
+감사합니다.. 스팀덱으로 데스크탑모드 실행하는 등 한글 지원 안하면 이 사이트 필수네요 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-10-17T18:33:37+09:00 2023. 10. 17. 오후 6:33:37] [=#comment_1697535217504185]
+----
+안녕 -- [[span(class=trac-author,류호수)]] [timeline:2023-10-18T09:39:07+09:00 2023. 10. 18. 오전 9:39:07] [=#comment_1697589547976474]
+----
+10/18 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-18T09:46:31+09:00 2023/10/18 9:46:31] [=#comment_1697589991085938]
+----
+10/20출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-10-20T09:35:52+09:00 2023/10/20 9:35:52] [=#comment_1697762152682641]
+----
+10/23출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-23T09:51:23+09:00 2023/10/23 9:51:23] [=#comment_1698022283256112]
+----
+10/24 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-10-24T10:44:02+09:00 2023/10/24 10:44:02] [=#comment_1698111842489394]
+----
+10/25 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-10-25T10:13:25+09:00 2023/10/25 10:13:25] [=#comment_1698196405549258]
+----
+10/26 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-26T09:32:44+09:00 2023/10/26 9:32:44] [=#comment_1698280364326362]
+----
+19 21 22일은 왜 빼먹음 -- [[span(class=trac-author,anonymous)]] [timeline:2023-10-26T13:22:07+09:00 Oct 26, 2023, 1:22:07 PM] [=#comment_1698294127940910]
+----
+이건 혁명이야 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-10-26T23:20:32+09:00 2023. 10. 26. 오후 11:20:32] [=#comment_1698330032992094]
+----
+wjdakf rkatkgkqslek wlrma dhlrnrdhktj wkf TMrh dlTtmqslek!! wlsWK dlrj aksems tkfka cjswodlsemt
+ -- [[span(class=trac-author,anonymous)]] [timeline:2023-10-27T02:20:33+09:00 Oct 27, 2023, 2:20:33 AM] [=#comment_1698340833078432]
+----
+10/27 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-10-27T13:32:22+09:00 2023/10/27 13:32:22] [=#comment_1698381142510096]
+----
+10/30 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-30T10:54:54+09:00 2023/10/30 10:54:54] [=#comment_1698630894531834]
+----
+dlrjs tlsdlek -- [[span(class=trac-author,익명사용자)]] [timeline:2023-10-30T15:34:36+09:00 2023. 10. 30. 오후 3:34:36] [=#comment_1698647676959977]
+----
+10/31 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-10-31T14:32:24+09:00 2023/10/31 14:32:24] [=#comment_1698730344435000]
+----
+11/1 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-11-01T15:21:17+09:00 2023/11/01 15:21:17] [=#comment_1698819677052898]
+----
+우아 유학중에 글쓰라고 해서 ＊될뻔 했는데 덕분에 번역기로 해결 감사합니다
+
+
+ -- [[span(class=trac-author,anonymous)]] [timeline:2023-11-02T02:41:54+09:00 Nov 2, 2023, 2:41:54 AM] [=#comment_1698860514636246]
+----
+11/2 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-02T09:35:49+09:00 2023/11/02 9:35:49] [=#comment_1698885349947255]
+----
+11/3(금)은 공휴일로인해 출석은 쉽니다 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-02T09:36:32+09:00 2023/11/02 9:36:32] [=#comment_1698885392246247]
+----
+11/6 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-11-06T09:18:28+09:00 2023/11/06 9:18:28] [=#comment_1699229908236772]
+----
+11/7 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-07T09:02:03+09:00 2023/11/07 9:02:03] [=#comment_1699315323894985]
+----
+그저 G.O.A.T 인터넷 역사상 최고의 사이트. -- [[span(class=trac-author,손흥민)]] [timeline:2023-11-07T15:45:46+09:00 2023. 11. 7. 오후 3:45:46] [=#comment_1699339546694797]
+----
+11/8 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-08T09:36:13+09:00 2023/11/08 9:36:13] [=#comment_1699403773928609]
+----
+11/9 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-09T09:38:23+09:00 2023/11/09 9:38:23] [=#comment_1699490303881796]
+----
+리눅스 한글 설정이 안되서 유용하게 쓰고있습니다.
+ -- [[span(class=trac-author,anonymous)]] [timeline:2023-11-09T11:38:45+09:00 Nov 9, 2023, 11:38:45 AM] [=#comment_1699497525618922]
+----
+11/10 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-10T10:45:46+09:00 2023/11/10 10:45:46] [=#comment_1699580746029486]
+----
+11/13 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-13T09:03:40+09:00 2023/11/13 9:03:40] [=#comment_1699833820401705]
+----
+wlrmaRKwl wprk anjs rhtoddmf gksrjsrkdy ee
+sjan rkatkgkqslek!gjf qhrtkzleh dlTspdy -- [[span(class=trac-author,익명사용자)]] [timeline:2023-11-14T08:54:05+09:00 2023. 11. 14. 오전 8:54:05] [=#comment_1699919645685306]
+----
+11/14 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-14T09:03:38+09:00 2023/11/14 9:03:38] [=#comment_1699920218836197]
+----
+11/15 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-15T09:26:24+09:00 2023/11/15 9:26:24] [=#comment_1700007984765864]
+----
+11/16 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-11-16T09:03:28+09:00 2023/11/16 9:03:28] [=#comment_1700093008182252]
+----
+유용하게 잘 쓰고 있습니다 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-11-16T19:48:35+09:00 2023. 11. 16. 오후 7:48:35] [=#comment_1700131715197277]
+----
+와 캐나다에서 잘 쓰고 있습니다 감사합니당!! -- [[span(class=trac-author,익명사용자)]] [timeline:2023-11-17T04:25:18+09:00 2023. 11. 17. 오전 4:25:18] [=#comment_1700162718505806]
+----
+11/17 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-17T11:53:33+09:00 2023/11/17 11:53:33] [=#comment_1700189613926695]
+----
+11/20 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-20T09:04:33+09:00 2023/11/20 9:04:33] [=#comment_1700438673755188]
+----
+11/21 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-21T09:07:49+09:00 2023/11/21 9:07:49] [=#comment_1700525269621820]
+----
+11/22 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-22T16:47:26+09:00 2023/11/22 16:47:26] [=#comment_1700639246782959]
+----
+11/23은 휴일로 인해 출석은 쉽니다 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-24T09:04:03+09:00 2023/11/24 9:04:03] [=#comment_1700784243885477]
+----
+11/24 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-24T09:04:13+09:00 2023/11/24 9:04:13] [=#comment_1700784253081662]
+----
+오 ㄷㄷ 아니 ㅋㅋ 이런게 되? -- [[span(class=trac-author,익명사용자)]] [timeline:2023-11-24T09:53:20+09:00 2023. 11. 24. 오전 9:53:20] [=#comment_1700787200184784]
+----
+11/27 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-11-27T09:26:20+09:00 2023/11/27 9:26:20] [=#comment_1701044780776083]
+----
+11/28 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-11-28T09:39:05+09:00 2023/11/28 9:39:05] [=#comment_1701131945512777]
+----
+11/29 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-11-29T09:39:57+09:00 2023/11/29 9:39:57] [=#comment_1701218397085782]
+----
+11/30 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-11-30T09:03:22+09:00 2023/11/30 9:03:22] [=#comment_1701302602883913]
+----
+세벌식 변환을 지원해주세요. 두벌식을 영타로 변환하는 사이트는 많지만 세벌식을 영타로 변환, 영타를 세벌식 최종, 세벌식 390으로 변환해주는 사이트는 없어졌어요. -- [[span(class=trac-author,익명사용자)]] [timeline:2023-12-01T02:24:35+09:00 2023. 12. 1. 오전 2:24:35] [=#comment_1701365075938387]
+----
+12/1 출첵
+2023년도 한달밖에 남지 않았네요 화이팅 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-01T10:10:30+09:00 2023/12/01 10:10:30] [=#comment_1701393030486965]
+----
+다음년도도 화이팅 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-12-02T22:59:55+09:00 2023. 12. 2. 오후 10:59:55] [=#comment_1701525595680996]
+----
+12/4 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-04T09:03:49+09:00 2023/12/04 9:03:49] [=#comment_1701648229236119]
+----
+캐나다 유학 와서 짤 쓰고있어요오 진짜 대단하십니다..! -- [[span(class=trac-author,익명)]] [timeline:2023-12-05T06:07:19+09:00 Dec 5, 2023, 6:07:19 AM] [=#comment_1701724039664846]
+----
+12/5 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-05T09:22:28+09:00 2023/12/05 9:22:28] [=#comment_1701735748642225]
+----
+dirmsgkrltlfgek............... -- [[span(class=trac-author,익명사용자)]] [timeline:2023-12-05T18:32:44+09:00 2023. 12. 5. 오후 6:32:44] [=#comment_1701768764825008]
+----
+12/6 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-06T09:06:46+09:00 2023/12/06 9:06:46] [=#comment_1701821206169679]
+----
+나도 할래 출첵 :D 12.6.23 -- [[span(class=trac-author,anonymous)]] [timeline:2023-12-07T05:37:01+09:00 Dec 7, 2023, 5:37:01 AM] [=#comment_1701895021747961]
+----
+12/7 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-07T08:59:42+09:00 2023/12/07 8:59:42] [=#comment_1701907182029775]
+----
+이거 댓글란이 있었네 ㅋㅋㅋㅋㅋㅋㅋ 잘 쓰고 가용 -- [[span(class=trac-author,녹차빌런)]] [timeline:2023-12-07T11:22:18+09:00 2023. 12. 7. 오전 11:22:18] [=#comment_1701915738063093]
+----
+출첵 -- [[span(class=trac-author,:D)]] [timeline:2023-12-08T08:48:19+09:00 2023. 12. 8. 오전 8:48:19] [=#comment_1701992899695364]
+----
+12/8 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-08T09:17:47+09:00 2023/12/08 9:17:47] [=#comment_1701994667030444]
+----
+출첵 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-12-08T11:55:39+09:00 2023. 12. 8. 오전 11:55:39] [=#comment_1702004139728225]
+----
+출첵 -- [[span(class=trac-author,:D)]] [timeline:2023-12-09T03:00:57+09:00 Dec 9, 2023, 3:00:57 AM] [=#comment_1702058457059522]
+----
+12/11 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-11T08:51:36+09:00 2023/12/11 8:51:36] [=#comment_1702252296809049]
+----
+12/12 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-12-12T11:11:20+09:00 2023/12/12 11:11:20] [=#comment_1702347080096954]
+----
+12/13 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-13T09:41:18+09:00 2023/12/13 9:41:18] [=#comment_1702428078975950]
+----
+12/14 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-14T09:04:51+09:00 2023/12/14 9:04:51] [=#comment_1702512291152803]
+----
+오된다된다 -- [[span(class=trac-author,한영타)]] [timeline:2023-12-14T18:26:45+09:00 2023. 12. 14. 오후 6:26:45] [=#comment_1702546005343408]
+----
+12/15 출첵  -- [[span(class=trac-author,匿名)]] [timeline:2023-12-15T09:07:07+09:00 2023/12/15 9:07:07] [=#comment_1702598827388925]
+----
+몇번 빠짐.. 지소ㅗㅇ -- [[span(class=trac-author,:D)]] [timeline:2023-12-16T03:30:48+09:00 Dec 16, 2023, 3:30:48 AM] [=#comment_1702665048154174]
+----
+아령하세 -- [[span(class=trac-author,익명사용자)]] [timeline:2023-12-16T22:17:35+09:00 2023. 12. 16. 오후 10:17:35] [=#comment_1702732655430194]
+----
+19년전 프로그램임에도 너무나도 잘 쓰고 있습니다. 제작자님 감사합니다 ㅎㅎ -- [[span(class=trac-author,익명사용자)]] [timeline:2023-12-17T11:56:58+09:00 2023. 12. 17. 오전 11:56:58] [=#comment_1702781818913060]
+----
+12/18 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-18T08:56:45+09:00 2023/12/18 8:56:45] [=#comment_1702857405885268]
+----
+12/19 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-19T09:00:18+09:00 2023/12/19 9:00:18] [=#comment_1702944018895981]
+----
+12/20 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-20T09:01:41+09:00 2023/12/20 9:01:41] [=#comment_1703030501906956]
+----
+12/21 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-21T09:04:17+09:00 2023/12/21 9:04:17] [=#comment_1703117057989997]
+----
+12/22 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-22T11:21:51+09:00 2023/12/22 11:21:51] [=#comment_1703211711252061]
+----
+12/25 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-25T10:46:32+09:00 2023/12/25 10:46:32] [=#comment_1703468792657198]
+----
+※공지 
+12/28〜1/8은 연말연시휴가로 인해 출석은 쉽니다  -- [[span(class=trac-author,匿名)]] [timeline:2023-12-25T10:48:00+09:00 2023/12/25 10:48:00] [=#comment_1703468880900940]
+----
+12/26 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-26T09:03:43+09:00 2023/12/26 9:03:43] [=#comment_1703549023773019]
+----
+12/27 출첵 -- [[span(class=trac-author,匿名)]] [timeline:2023-12-27T13:50:38+09:00 2023/12/27 13:50:38] [=#comment_1703652638147711]
+----
+1등 -- [[span(class=trac-author,익명사용자)]] [timeline:2024-01-04T16:41:47+09:00 2024. 1. 4. 오후 4:41:47] [=#comment_1704354107449571]
+----
+와 좀있으면 20주년이네 ㅋㅋㅋㅋㅋㅋ -- [[span(class=trac-author,익명사용자)]] [timeline:2024-01-04T18:47:18+09:00 2024. 1. 4. 오후 6:47:18] [=#comment_1704361638360228]
+----
+사이트 엔진 교체 관계로 댓글 기능을 종료합니다. 긴 시간 잘 사용해 주시는 분들과 의견 남겨주신 분들께 감사 인사 드립니다. -- [[span(class=trac-author,YT)]] [timeline:2024-01-07T18:32:18+09:00 2024. 1. 7. 오후 6:32:18] [=#comment_1704619938763163]
